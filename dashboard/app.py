@@ -137,12 +137,6 @@ st.sidebar.markdown("**Employee Selection**")
 unique_users = sorted(df['user'].unique())
 selected_user = st.sidebar.selectbox("Select Employee", unique_users, key="user_select")
 
-# Quick filter for high-risk employees
-show_high_risk_only = st.sidebar.checkbox("Show High-Risk Employees Only", key="high_risk_filter")
-if show_high_risk_only:
-    high_risk_users = df[df['risk_band'] == 'High']['user'].unique()
-    selected_user = st.sidebar.selectbox("Select High-Risk Employee", sorted(high_risk_users), key="high_risk_user_select")
-
 st.sidebar.markdown("**Week Selection**")
 # Get weeks for selected user
 user_weeks = df[df['user'] == selected_user]['week'].sort_values().unique()
@@ -165,7 +159,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("**View Mode**")
 view_mode = st.sidebar.radio(
     "Select View",
-    ["Executive Overview", "Individual Analysis", "Risk Overview", "Summary & Evaluation"],
+    ["Individual Analysis", "Risk Overview", "Summary & Evaluation"],
     key="view_mode"
 )
 
@@ -178,101 +172,7 @@ st.markdown("---")
 # Get selected row
 selected_row = df[(df['user'] == selected_user) & (df['week'] == selected_week)].iloc[0]
 
-if view_mode == "Executive Overview":
-    # =============================================================================
-    # EXECUTIVE OVERVIEW VIEW (Necurity-style)
-    # =============================================================================
-    
-    st.markdown('<div class="main-header">Executive Overview</div>', unsafe_allow_html=True)
-    st.markdown("Your insider threat posture, real-time.")
-    
-    # Top row: Key metrics like Necurity
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        avg_risk_score = df['risk_score'].mean()
-        st.metric("Avg Risk Score", f"{avg_risk_score:.1f}", "0-100")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        high_risk_count = len(df[df['risk_band'] == 'High'])
-        st.metric("High Risk Cases", high_risk_count, "Flagged")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        total_users = df['user'].nunique()
-        st.metric("Total Employees", total_users)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        total_weeks = df['week'].nunique()
-        st.metric("Weeks Analyzed", total_weeks)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Second row: Risk distribution and trend
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
-        st.subheader("Risk Band Distribution")
-        risk_counts = df['risk_band'].value_counts()
-        fig = px.pie(
-            values=risk_counts.values,
-            names=risk_counts.index,
-            hole=0.5,
-            color_discrete_map={'Low': '#10b981', 'Medium': '#f59e0b', 'High': '#ef4444'}
-        )
-        fig.update_traces(textposition='inside', textinfo='percent+label', textfont_size=14)
-        fig.update_layout(height=350, showlegend=True, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
-        st.subheader("Risk Score Trend")
-        # Weekly average risk score
-        weekly_avg = df.groupby('week')['risk_score'].mean().reset_index()
-        weekly_avg = weekly_avg.sort_values('week')
-        
-        fig = px.line(
-            weekly_avg,
-            x='week',
-            y='risk_score',
-            labels={'week': 'Week', 'risk_score': 'Avg Risk Score'},
-            markers=True
-        )
-        fig.update_traces(line=dict(color='#2563eb', width=2), marker=dict(size=6))
-        fig.update_layout(height=350, showlegend=False, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Top High-Risk Cases table
-    st.markdown('<div class="section-header">Top High-Risk Cases</div>', unsafe_allow_html=True)
-    st.markdown('<div class="info-box">', unsafe_allow_html=True)
-    high_risk_df = df[df['risk_band'] == 'High'].sort_values('risk_score', ascending=False).head(10)
-    st.dataframe(
-        high_risk_df[['user', 'week', 'risk_score', 'role', 'department']],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            'user': st.column_config.TextColumn('Employee', width='medium'),
-            'week': st.column_config.DateColumn('Week', width='medium'),
-            'risk_score': st.column_config.NumberColumn('Risk Score', format='%.1f'),
-            'role': st.column_config.TextColumn('Role', width='medium'),
-            'department': st.column_config.TextColumn('Department', width='medium')
-        }
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-elif view_mode == "Individual Analysis":
+if view_mode == "Individual Analysis":
     # =============================================================================
     # INDIVIDUAL ANALYSIS VIEW
     # =============================================================================
