@@ -1,0 +1,17 @@
+# Raw downloaded dataset (huge, don't push to GitHub)
+archive/
+data/raw/
+
+# Individual cleaned log files (still large, regenerable)
+data/cleaned/device_cleaned.csv
+data/cleaned/email_cleaned.csv
+data/cleaned/file_cleaned.csv
+data/cleaned/http_cleaned.csv
+data/cleaned/logon_cleaned.csv
+data/cleaned/ldap_cleaned.csv
+
+# Python cache/environment files
+__pycache__/
+*.pyc
+.venv/
+venv/
