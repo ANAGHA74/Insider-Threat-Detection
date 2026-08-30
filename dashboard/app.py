@@ -21,24 +21,6 @@ def load_dashboard_data():
 # =============================================================================
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #f8fafc;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #1e293b;
-        padding: 20px;
-    }
-    [data-testid="stSidebar"] > div:first-child {
-        background-color: #1e293b;
-    }
-    .sidebar-header {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #ffffff;
-        padding: 16px 0;
-        margin-bottom: 24px;
-        border-bottom: 1px solid #334155;
-    }
     .main-header {
         font-size: 1.75rem;
         font-weight: 700;
@@ -51,26 +33,6 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         border-left: 5px solid #3b82f6;
     }
-    .metric-card {
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-        margin: 0;
-        border: 1px solid #e2e8f0;
-        transition: box-shadow 0.2s;
-    }
-    .metric-card:hover {
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.12);
-    }
-    .info-box {
-        background: white;
-        padding: 24px;
-        border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-        margin: 0;
-        border: 1px solid #e2e8f0;
-    }
     .section-header {
         font-size: 1.25rem;
         font-weight: 700;
@@ -78,35 +40,6 @@ st.markdown("""
         margin: 24px 0 16px 0;
         padding-bottom: 12px;
         border-bottom: 2px solid #e2e8f0;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #0f172a;
-    }
-    div[data-testid="stMetricLabel"] {
-        font-size: 0.875rem;
-        color: #64748b;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    .stButton>button {
-        background-color: #3b82f6;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 20px;
-        font-weight: 600;
-    }
-    .stButton>button:hover {
-        background-color: #2563eb;
-    }
-    [data-testid="stMarkdownContainer"] > p {
-        color: #334155;
-    }
-    h1, h2, h3 {
-        color: #0f172a !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -129,7 +62,7 @@ df = load_dashboard_data()
 # =============================================================================
 # SIDEBAR - CONTROLS
 # =============================================================================
-st.sidebar.markdown('<div class="sidebar-header">Controls</div>', unsafe_allow_html=True)
+st.sidebar.markdown("### Controls")
 st.sidebar.markdown("---")
 
 # Employee and week selector
@@ -166,7 +99,7 @@ view_mode = st.sidebar.radio(
 # =============================================================================
 # MAIN CONTENT
 # =============================================================================
-st.markdown('<div class="main-header">Insider Threat Detection Dashboard</div>', unsafe_allow_html=True)
+st.markdown("# Insider Threat Detection Dashboard")
 st.markdown("---")
 
 # Get selected row
@@ -177,8 +110,8 @@ if view_mode == "Individual Analysis":
     # INDIVIDUAL ANALYSIS VIEW
     # =============================================================================
     
-    # Header with employee info in styled containers
-    st.markdown('<div class="section-header">Employee Information</div>', unsafe_allow_html=True)
+    # Header with employee info
+    st.markdown("### Employee Information")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -196,8 +129,8 @@ if view_mode == "Individual Analysis":
     risk_score = selected_row['risk_score']
     risk_band = selected_row['risk_band']
     
-    # Alert Panel with styled container
-    st.markdown('<div class="section-header">Risk Assessment</div>', unsafe_allow_html=True)
+    # Alert Panel
+    st.markdown("### Risk Assessment")
     
     if risk_score > 70:
         st.error(f"FLAGGED - High Risk Score: {risk_score:.1f}")
@@ -210,7 +143,6 @@ if view_mode == "Individual Analysis":
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Risk Score")
         fig = go.Figure(go.Indicator(
             mode = "gauge+number+delta",
@@ -238,10 +170,8 @@ if view_mode == "Individual Analysis":
         ))
         fig.update_layout(height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Behavioral Metrics")
         metrics_data = {
             'Logon Count': selected_row['logon_count'],
@@ -254,14 +184,12 @@ if view_mode == "Individual Analysis":
         
         for metric, value in metrics_data.items():
             st.metric(metric, value)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
     # SHAP Explanation Panel
-    st.markdown('<div class="section-header">SHAP Explanation</div>', unsafe_allow_html=True)
+    st.markdown("### SHAP Explanation")
     if pd.notna(selected_row['shap_top_features']):
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Why is this risk score high?")
         try:
             shap_features = json.loads(selected_row['shap_top_features'])
@@ -283,19 +211,16 @@ if view_mode == "Individual Analysis":
                 st.info("No SHAP features available for this case")
         except:
             st.info("SHAP explanation data not available")
-        st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No SHAP explanation data available for this case")
     
     st.markdown("---")
     
     # DiCE Explanation Panel
-    st.markdown('<div class="section-header">DiCE Counterfactual</div>', unsafe_allow_html=True)
+    st.markdown("### DiCE Counterfactual")
     if pd.notna(selected_row['dice_explanation']):
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("What would lower the risk?")
         st.info(selected_row['dice_explanation'])
-        st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No DiCE explanation data available for this case")
 
@@ -304,13 +229,12 @@ elif view_mode == "Risk Overview":
     # RISK OVERVIEW VIEW
     # =============================================================================
     
-    st.markdown('<div class="main-header">Risk Distribution Overview</div>', unsafe_allow_html=True)
+    st.markdown("# Risk Distribution Overview")
     
     # Risk Band Distribution
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Risk Band Distribution")
         risk_counts = df['risk_band'].value_counts()
         fig = px.pie(
@@ -322,10 +246,8 @@ elif view_mode == "Risk Overview":
         fig.update_traces(textposition='inside', textinfo='percent+label')
         fig.update_layout(height=400, showlegend=True, margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Risk Score Distribution")
         fig = px.histogram(
             df, 
@@ -337,13 +259,11 @@ elif view_mode == "Risk Overview":
         )
         fig.update_layout(height=400, showlegend=True, margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
     # High Risk Cases Table
-    st.markdown('<div class="section-header">High Risk Cases</div>', unsafe_allow_html=True)
-    st.markdown('<div class="info-box">', unsafe_allow_html=True)
+    st.markdown("### High Risk Cases")
     high_risk_df = df[df['risk_band'] == 'High'].sort_values('risk_score', ascending=False).head(20)
     st.dataframe(
         high_risk_df[['user', 'week', 'risk_score', 'role', 'department']],
@@ -357,35 +277,27 @@ elif view_mode == "Risk Overview":
             'department': st.column_config.TextColumn('Department', width='medium')
         }
     )
-    st.markdown('</div>', unsafe_allow_html=True)
+
 
 elif view_mode == "Summary & Evaluation":
     # =============================================================================
     # SUMMARY & EVALUATION VIEW (Placeholders for real metrics)
     # =============================================================================
     
-    st.markdown('<div class="main-header">Summary & Evaluation Metrics</div>', unsafe_allow_html=True)
+    st.markdown("# Summary & Evaluation Metrics")
     
-    # Placeholder metrics in styled containers
-    st.markdown('<div class="section-header">Model Performance Metrics</div>', unsafe_allow_html=True)
+    # Placeholder metrics
+    st.markdown("### Model Performance Metrics")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.metric("Precision", "0.85", "↑ 5%")
-        st.markdown('</div>', unsafe_allow_html=True)
     with col2:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.metric("Recall", "0.78", "↑ 3%")
-        st.markdown('</div>', unsafe_allow_html=True)
     with col3:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.metric("F1 Score", "0.81", "↑ 4%")
-        st.markdown('</div>', unsafe_allow_html=True)
     with col4:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.metric("FPR", "0.12", "↓ 8%")
-        st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -393,7 +305,6 @@ elif view_mode == "Summary & Evaluation":
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Model Performance Over Time")
         # Placeholder data
         weeks = df['week'].dt.strftime('%Y-%m').unique()[:12]
@@ -405,10 +316,8 @@ elif view_mode == "Summary & Evaluation":
         fig.add_trace(go.Scatter(x=weeks, y=recall, name='Recall', mode='lines+markers', line=dict(color='#f59e0b', width=2)))
         fig.update_layout(height=400, showlegend=True, margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("False Positive Rate Comparison")
         # Placeholder comparison
         methods = ['Fixed Threshold', 'Peer-Cohort Baselining']
@@ -426,7 +335,6 @@ elif view_mode == "Summary & Evaluation":
         fig.update_traces(textfont_size=12, textangle=0, textposition="outside")
         fig.update_layout(height=400, showlegend=False, margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     st.info("Note: Evaluation metrics are placeholders and will be replaced with real model performance data once the XGBoost model is trained and evaluated.")
 
