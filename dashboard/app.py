@@ -116,6 +116,12 @@ st.sidebar.markdown("**Employee Selection**")
 unique_users = sorted(df['user'].unique())
 selected_user = st.sidebar.selectbox("Select Employee", unique_users, key="user_select")
 
+# Quick filter for high-risk employees
+show_high_risk_only = st.sidebar.checkbox("Show High-Risk Employees Only", key="high_risk_filter")
+if show_high_risk_only:
+    high_risk_users = df[df['risk_band'] == 'High']['user'].unique()
+    selected_user = st.sidebar.selectbox("Select High-Risk Employee", sorted(high_risk_users), key="high_risk_user_select")
+
 st.sidebar.markdown("**Week Selection**")
 # Get weeks for selected user
 user_weeks = df[df['user'] == selected_user]['week'].sort_values().unique()
@@ -237,9 +243,9 @@ if view_mode == "Individual Analysis":
     
     st.markdown("---")
     
-    # SHAP Explanation Panel (only for High risk)
+    # SHAP Explanation Panel
     st.markdown('<div class="section-header">SHAP Explanation</div>', unsafe_allow_html=True)
-    if risk_band == 'High' and pd.notna(selected_row['shap_top_features']):
+    if pd.notna(selected_row['shap_top_features']):
         st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Why is this risk score high?")
         try:
@@ -258,23 +264,25 @@ if view_mode == "Individual Analysis":
                 )
                 fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=300, showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No SHAP features available for this case")
         except:
             st.info("SHAP explanation data not available")
         st.markdown('</div>', unsafe_allow_html=True)
     else:
-        st.info("SHAP explanations available only for High-risk cases")
+        st.info("No SHAP explanation data available for this case")
     
     st.markdown("---")
     
-    # DiCE Explanation Panel (only for High risk)
+    # DiCE Explanation Panel
     st.markdown('<div class="section-header">DiCE Counterfactual</div>', unsafe_allow_html=True)
-    if risk_band == 'High' and pd.notna(selected_row['dice_explanation']):
+    if pd.notna(selected_row['dice_explanation']):
         st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("What would lower the risk?")
         st.info(selected_row['dice_explanation'])
         st.markdown('</div>', unsafe_allow_html=True)
     else:
-        st.info("DiCE explanations available only for High-risk cases")
+        st.info("No DiCE explanation data available for this case")
 
 elif view_mode == "Risk Overview":
     # =============================================================================
