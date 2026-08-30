@@ -22,70 +22,91 @@ def load_dashboard_data():
 st.markdown("""
 <style>
     .stApp {
-        background-color: #f5f7fa;
+        background-color: #f8fafc;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #1e293b;
+        padding: 20px;
+    }
+    [data-testid="stSidebar"] > div:first-child {
+        background-color: #1e293b;
+    }
+    .sidebar-header {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #ffffff;
+        padding: 16px 0;
+        margin-bottom: 24px;
+        border-bottom: 1px solid #334155;
     }
     .main-header {
-        font-size: 2rem;
-        font-weight: 600;
-        color: #1a1a1a;
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #0f172a;
         text-align: left;
-        padding: 24px 32px;
+        padding: 20px 24px;
         background: white;
-        border-radius: 8px;
+        border-radius: 12px;
         margin-bottom: 24px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        border-left: 4px solid #2563eb;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        border-left: 5px solid #3b82f6;
     }
     .metric-card {
         background: white;
-        padding: 16px;
-        border-radius: 8px;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-        margin: 8px 0;
-        border: 1px solid #e5e7eb;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        margin: 0;
+        border: 1px solid #e2e8f0;
+        transition: box-shadow 0.2s;
+    }
+    .metric-card:hover {
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.12);
     }
     .info-box {
         background: white;
         padding: 24px;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        margin: 16px 0;
-        border: 1px solid #e5e7eb;
-    }
-    .sidebar-header {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #1a1a1a;
-        padding: 12px 0;
-        margin-bottom: 8px;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        margin: 0;
+        border: 1px solid #e2e8f0;
     }
     .section-header {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #1a1a1a;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #0f172a;
         margin: 24px 0 16px 0;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #e5e7eb;
+        padding-bottom: 12px;
+        border-bottom: 2px solid #e2e8f0;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.75rem;
-        font-weight: 600;
-        color: #1a1a1a;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #0f172a;
     }
     div[data-testid="stMetricLabel"] {
         font-size: 0.875rem;
-        color: #6b7280;
-        font-weight: 500;
+        color: #64748b;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
     .stButton>button {
-        background-color: #2563eb;
+        background-color: #3b82f6;
         color: white;
         border: none;
-        border-radius: 6px;
-        padding: 8px 16px;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-weight: 600;
     }
     .stButton>button:hover {
-        background-color: #1d4ed8;
+        background-color: #2563eb;
+    }
+    [data-testid="stMarkdownContainer"] > p {
+        color: #334155;
+    }
+    h1, h2, h3 {
+        color: #0f172a !important;
     }
 </style>
 """, unsafe_allow_html=True)
