@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import json
+import time
 
 # =============================================================================
 # DATA LOADING FUNCTION (Single point of entry - easy to swap file path later)
@@ -11,8 +12,8 @@ import json
 @st.cache_data
 def load_dashboard_data():
     """Load dashboard development data with risk scores and explanations."""
-    file_path = 'data/cleaned/dashboard_dev_data.csv'
-    df = pd.read_csv(file_path)
+    file_path = 'data/cleaned/final_predictions.csv'
+    df = pd.read_csv(file_path, low_memory=False)
     df['week'] = pd.to_datetime(df['week'])
     return df
 
@@ -70,10 +71,17 @@ st.sidebar.markdown("**Employee Selection**")
 unique_users = sorted(df['user'].unique())
 selected_user = st.sidebar.selectbox("Select Employee", unique_users, key="user_select")
 
+# Reset auto-replay when user changes
+if 'last_selected_user' not in st.session_state:
+    st.session_state.last_selected_user = selected_user
+elif st.session_state.last_selected_user != selected_user:
+    st.session_state.last_selected_user = selected_user
+    st.session_state.auto_replay_week_index = 0
+    st.session_state.last_replay_time = time.time()
+
 st.sidebar.markdown("**Week Selection**")
 # Get weeks for selected user
 user_weeks = df[df['user'] == selected_user]['week'].sort_values().unique()
-selected_week = st.sidebar.selectbox("Select Week", user_weeks, key="week_select")
 
 # Replay mechanism
 st.sidebar.markdown("---")
@@ -81,11 +89,30 @@ st.sidebar.markdown("**Replay Mode**")
 auto_replay = st.sidebar.checkbox("Enable Auto-Replay", key="auto_replay")
 replay_speed = st.sidebar.slider("Speed (seconds)", 1, 5, 2, key="replay_speed")
 
+# Initialize session state for replay
+if 'auto_replay_week_index' not in st.session_state:
+    st.session_state.auto_replay_week_index = 0
+if 'last_replay_time' not in st.session_state:
+    st.session_state.last_replay_time = time.time()
+
 if auto_replay:
-    current_week_index = list(user_weeks).index(selected_week)
-    if current_week_index < len(user_weeks) - 1:
-        selected_week = user_weeks[current_week_index + 1]
-        st.rerun()
+    # Show current week as display (not selectable)
+    current_week = user_weeks[st.session_state.auto_replay_week_index]
+    st.sidebar.metric("Current Week", current_week.strftime("%Y-%m-%d"))
+    
+    # Auto-advance based on time
+    if time.time() - st.session_state.last_replay_time >= replay_speed:
+        if st.session_state.auto_replay_week_index < len(user_weeks) - 1:
+            st.session_state.auto_replay_week_index += 1
+            st.session_state.last_replay_time = time.time()
+            st.rerun()
+    
+    selected_week = user_weeks[st.session_state.auto_replay_week_index]
+else:
+    # Manual week selection
+    selected_week = st.sidebar.selectbox("Select Week", user_weeks, key="week_select")
+    # Reset auto-replay index when switching to manual mode
+    st.session_state.auto_replay_week_index = list(user_weeks).index(selected_week)
 
 # View selector
 st.sidebar.markdown("---")
@@ -187,6 +214,55 @@ if view_mode == "Individual Analysis":
     
     st.markdown("---")
     
+    # Peer-Cohort Comparison Panel
+    st.markdown("### Peer-Cohort Comparison")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("Peer Group", selected_row['peer_cohort'])
+    with col2:
+        st.metric("Deviation from Peer Baseline", f"{selected_row['peer_deviation_score']:.4f}")
+    
+    # Peer cohort comparison chart
+    st.subheader("Behavioral Comparison with Peer Cohort")
+    key_features = ['off_hours_ratio', 'usb_events', 'file_access_count']
+    
+    # Get cohort averages for the same week
+    cohort_avg = df[
+        (df['peer_cohort'] == selected_row['peer_cohort']) & 
+        (df['week'] == selected_row['week'])
+    ][key_features].mean()
+    
+    # Prepare comparison data
+    comparison_data = []
+    for feat in key_features:
+        if feat in selected_row.index and feat in cohort_avg.index:
+            comparison_data.append({
+                'Feature': feat.replace('_', ' ').title(),
+                'User Value': selected_row[feat],
+                'Cohort Average': cohort_avg[feat]
+            })
+    
+    if comparison_data:
+        comparison_df = pd.DataFrame(comparison_data)
+        comparison_df_melted = comparison_df.melt(id_vars=['Feature'], var_name='Type', value_name='Value')
+        
+        fig = px.bar(
+            comparison_df_melted,
+            x='Feature',
+            y='Value',
+            color='Type',
+            barmode='group',
+            color_discrete_map={'User Value': '#3b82f6', 'Cohort Average': '#10b981'},
+            labels={'Value': 'Value', 'Feature': 'Feature'}
+        )
+        fig.update_layout(height=300, showlegend=True, margin=dict(l=20, r=20, t=30, b=20))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Unable to generate peer cohort comparison")
+    
+    st.markdown("---")
+    
     # SHAP Explanation Panel
     st.markdown("### SHAP Explanation")
     if pd.notna(selected_row['shap_top_features']):
@@ -194,8 +270,14 @@ if view_mode == "Individual Analysis":
         try:
             shap_features = json.loads(selected_row['shap_top_features'])
             if shap_features:
-                feature_names = [f[0] for f in shap_features]
-                importance_values = [f[1] for f in shap_features]
+                # Handle both list of lists and list of dicts formats
+                if isinstance(shap_features[0], dict):
+                    feature_names = [f['feature'] for f in shap_features]
+                    importance_values = [f['value'] for f in shap_features]
+                else:
+                    # Fallback for list of lists format
+                    feature_names = [f[0] for f in shap_features]
+                    importance_values = [f[1] for f in shap_features]
                 
                 fig = px.bar(
                     x=importance_values,
@@ -209,8 +291,8 @@ if view_mode == "Individual Analysis":
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("No SHAP features available for this case")
-        except:
-            st.info("SHAP explanation data not available")
+        except Exception as e:
+            st.error(f"Error parsing SHAP data: {str(e)}")
     else:
         st.info("No SHAP explanation data available for this case")
     
@@ -223,6 +305,22 @@ if view_mode == "Individual Analysis":
         st.info(selected_row['dice_explanation'])
     else:
         st.info("No DiCE explanation data available for this case")
+    
+    st.markdown("---")
+    
+    # Ground Truth Reveal Button
+    st.markdown("### Ground Truth")
+    if 'reveal_ground_truth' not in st.session_state:
+        st.session_state.reveal_ground_truth = False
+    
+    if st.button("Reveal Ground Truth"):
+        st.session_state.reveal_ground_truth = True
+    
+    if st.session_state.reveal_ground_truth:
+        if selected_row['is_malicious'] == 1:
+            st.error("Confirmed Malicious Scenario")
+        else:
+            st.success("Confirmed Normal Activity")
 
 elif view_mode == "Risk Overview":
     # =============================================================================
@@ -281,62 +379,64 @@ elif view_mode == "Risk Overview":
 
 elif view_mode == "Summary & Evaluation":
     # =============================================================================
-    # SUMMARY & EVALUATION VIEW (Placeholders for real metrics)
+    # SUMMARY & EVALUATION VIEW (Real metrics from evaluation)
     # =============================================================================
     
     st.markdown("# Summary & Evaluation Metrics")
     
-    # Placeholder metrics
-    st.markdown("### Model Performance Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Precision", "0.85", "↑ 5%")
-    with col2:
-        st.metric("Recall", "0.78", "↑ 3%")
-    with col3:
-        st.metric("F1 Score", "0.81", "↑ 4%")
-    with col4:
-        st.metric("FPR", "0.12", "↓ 8%")
-    
-    st.markdown("---")
-    
-    # Placeholder charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Model Performance Over Time")
-        # Placeholder data
-        weeks = df['week'].dt.strftime('%Y-%m').unique()[:12]
-        precision = np.random.uniform(0.75, 0.90, 12)
-        recall = np.random.uniform(0.70, 0.85, 12)
+    # Load real evaluation results
+    try:
+        results_df = pd.read_csv('outputs/results_summary.csv')
         
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=weeks, y=precision, name='Precision', mode='lines+markers', line=dict(color='#2563eb', width=2)))
-        fig.add_trace(go.Scatter(x=weeks, y=recall, name='Recall', mode='lines+markers', line=dict(color='#f59e0b', width=2)))
-        fig.update_layout(height=400, showlegend=True, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
+        # Get full model metrics
+        full_model = results_df[results_df['Model'] == 'Full Peer-Cohort Model'].iloc[0]
+        baseline_model = results_df[results_df['Model'] == 'Static Baseline'].iloc[0]
+        
+        # Real metrics
+        st.markdown("### Model Performance Metrics")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Precision", f"{full_model['Precision']:.4f}")
+        with col2:
+            st.metric("Recall", f"{full_model['Recall']:.4f}")
+        with col3:
+            st.metric("F1 Score", f"{full_model['F1-Score']:.4f}")
+        with col4:
+            st.metric("FPR", f"{full_model['False Positive Rate']:.4f}")
+        
+        st.markdown("---")
+        
+        # FPR Comparison Chart
         st.subheader("False Positive Rate Comparison")
-        # Placeholder comparison
-        methods = ['Fixed Threshold', 'Peer-Cohort Baselining']
-        fpr_rates = [0.25, 0.12]
+        methods = ['Static Baseline', 'Full Peer-Cohort Model']
+        fpr_rates = [baseline_model['False Positive Rate'], full_model['False Positive Rate']]
         
         fig = px.bar(
             x=methods,
             y=fpr_rates,
             labels={'x': 'Method', 'y': 'FPR'},
             color=methods,
-            color_discrete_map={'Fixed Threshold': '#ef4444', 'Peer-Cohort Baselining': '#10b981'},
+            color_discrete_map={'Static Baseline': '#ef4444', 'Full Peer-Cohort Model': '#10b981'},
             text=fpr_rates,
-            text_auto='.2f'
+            text_auto='.4f'
         )
         fig.update_traces(textfont_size=12, textangle=0, textposition="outside")
         fig.update_layout(height=400, showlegend=False, margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig, use_container_width=True)
-    
-    st.info("Note: Evaluation metrics are placeholders and will be replaced with real model performance data once the XGBoost model is trained and evaluated.")
+        
+        # Additional metrics table
+        st.markdown("---")
+        st.subheader("Detailed Results Comparison")
+        st.dataframe(
+            results_df[['Model', 'Precision', 'Recall', 'F1-Score', 'False Positive Rate', 'ROC-AUC', 'PR-AUC']],
+            use_container_width=True,
+            hide_index=True
+        )
+        
+    except Exception as e:
+        st.error(f"Error loading evaluation results: {str(e)}")
+        st.info("Please ensure outputs/results_summary.csv exists from the evaluation script.")
 
 # =============================================================================
 # FOOTER
