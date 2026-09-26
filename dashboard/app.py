@@ -287,7 +287,7 @@ if view_mode == "Individual Analysis":
             margin=dict(l=10, r=10, t=20, b=10),
             font={'color': '#E4E9F2'}
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         st.subheader("Behavioral Metrics")
@@ -363,7 +363,7 @@ if view_mode == "Individual Analysis":
                 labels={'Value': 'Value', 'Feature': 'Feature'}
             )
             fig.update_layout(height=250, showlegend=True, margin=dict(l=10, r=10, t=20, b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("Unable to generate peer cohort comparison")
     
@@ -425,7 +425,7 @@ if view_mode == "Individual Analysis":
                         xaxis_title="Contribution to Risk Score",
                         margin=dict(l=10, r=10, t=10, b=10)
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                     
                     # Add specific explanations with actual values
                     st.markdown("**Top Risk Factors:**")
@@ -528,19 +528,6 @@ elif view_mode == "Live Risk Simulator":
         st.markdown("### Behavioral Feature Inputs")
         st.markdown("Adjust the sliders to simulate different behavioral patterns:")
         
-        # Check if we should load high risk example
-        if 'load_high_risk_example' not in st.session_state:
-            st.session_state.load_high_risk_example = False
-        
-        # Get high risk example values if flag is set
-        high_risk_values = {}
-        if st.session_state.load_high_risk_example:
-            high_risk_case = df[df['risk_band'] == 'High'].iloc[0]
-            for feat in RAW_FEATURES:
-                if feat in high_risk_case.index:
-                    high_risk_values[feat] = high_risk_case[feat]
-            st.session_state.load_high_risk_example = False
-        
         # Create input fields for each feature
         input_values = {}
         cols = st.columns(3)
@@ -548,11 +535,8 @@ elif view_mode == "Live Risk Simulator":
             col_idx = i % 3
             with cols[col_idx]:
                 if feat in feature_ranges:
-                    # Use high risk values if available, otherwise use median
-                    if feat in high_risk_values:
-                        default_val = high_risk_values[feat]
-                    else:
-                        default_val = feature_ranges[feat]['median']
+                    # Use median as default value
+                    default_val = feature_ranges[feat]['median']
                     
                     min_val = feature_ranges[feat]['min']
                     max_val = feature_ranges[feat]['max']
@@ -588,28 +572,16 @@ elif view_mode == "Live Risk Simulator":
         if 'sim_calculate_risk' not in st.session_state:
             st.session_state.sim_calculate_risk = False
         
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("Calculate Risk", key="btn_calculate_risk"):
-                st.session_state.sim_calculate_risk = True
-        with col_btn2:
-            if st.button("Load High-Risk Example", key="btn_load_high_risk"):
-                # Set flag to load high risk example on next rerun
-                st.session_state.load_high_risk_example = True
-                st.session_state.sim_calculate_risk = False
-                st.rerun()
+        if st.button("Calculate Risk", key="btn_calculate_risk"):
+            st.session_state.sim_calculate_risk = True
         
         if st.session_state.sim_calculate_risk:
             with st.spinner("Calculating risk score..."):
                 # Get baseline from the middle of the dataset (representative of training distribution)
-                # Note: This is a simplified approach for the simulator. In real Individual Analysis,
-                # we use the baseline from the exact same week as the selected user.
                 cohort_data = df[df['peer_cohort'] == selected_cohort].sort_values('week')
                 mid_idx = len(cohort_data) // 2
                 baseline_week = cohort_data['week'].iloc[mid_idx]
                 baseline = cohort_data[cohort_data['week'] == baseline_week].iloc[0]
-                
-                st.info(f"Using baseline from week {baseline_week.strftime('%Y-%m-%d')} (representative of training distribution). For real-time analysis, use Individual Analysis view which uses the exact week's baseline.")
                 
                 # Compute z-scores
                 z_scores = {}
@@ -700,42 +672,13 @@ elif view_mode == "Live Risk Simulator":
                         margin=dict(l=10, r=10, t=20, b=10),
                         font={'color': '#E4E9F2'}
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 
                 with col2:
                     st.subheader("Input Summary")
                     st.metric("Peer Cohort", selected_cohort)
                     st.metric("Peer Deviation Score", f"{peer_deviation_score:.4f}")
                     st.metric("Risk Band", risk_band)
-                
-                st.markdown("---")
-                
-                # Show z-scores comparison
-                st.markdown("### Z-Score Analysis")
-                st.info("Z-scores show how much each feature deviates from the peer cohort baseline (|z| > 2 indicates significant deviation)")
-                
-                z_score_data = []
-                for feat in RAW_FEATURES:
-                    if f'{feat}_z_score' in z_scores:
-                        z_score_data.append({
-                            'Feature': feat.replace('_', ' ').title(),
-                            'Input Value': input_values[feat],
-                            'Z-Score': z_scores[f'{feat}_z_score']
-                        })
-                
-                if z_score_data:
-                    z_df = pd.DataFrame(z_score_data)
-                    # Highlight significant deviations
-                    def highlight_z_score(val):
-                        if abs(val) > 2:
-                            return 'background-color: #fee2e2'  # Red for high deviation
-                        elif abs(val) > 1:
-                            return 'background-color: #fef3c7'  # Yellow for moderate deviation
-                        else:
-                            return 'background-color: #d1fae5'  # Green for normal
-                    
-                    z_df_styled = z_df.style.map(highlight_z_score, subset=['Z-Score'])
-                    st.dataframe(z_df_styled, use_container_width=True, hide_index=True)
                 
                 st.markdown("---")
                 
@@ -768,7 +711,7 @@ elif view_mode == "Live Risk Simulator":
                         color_continuous_scale='Blues'
                     )
                     fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=300, showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 except Exception as e:
                     st.error(f"Error generating SHAP explanation: {str(e)}")
                 
@@ -881,14 +824,14 @@ elif view_mode == "Summary & Evaluation":
         )
         fig.update_traces(textfont_size=12, textangle=0, textposition="outside")
         fig.update_layout(height=400, showlegend=False, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         # Additional metrics table
         st.markdown("---")
         st.subheader("Detailed Results Comparison")
         st.dataframe(
             results_df[['Model', 'Precision', 'Recall', 'F1-Score', 'False Positive Rate', 'ROC-AUC', 'PR-AUC']],
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
         
