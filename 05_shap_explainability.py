@@ -42,6 +42,13 @@ def load_model_and_data():
     
     model = joblib.load(MODEL_PATH)
     print(f"Loaded model from {MODEL_PATH}")
+    print(f"Model type: {type(model).__name__}")
+    
+    # If it's a VotingClassifier, extract the XGBoost model for SHAP
+    if hasattr(model, 'estimators_'):
+        print("Detected VotingClassifier - extracting XGBoost model for SHAP")
+        model = model.named_estimators_['xgb']
+        print(f"Using XGBoost model for SHAP explanations")
     
     df = pd.read_csv(PREDICTIONS_PATH)
     print(f"Loaded predictions: {len(df):,} rows")

@@ -60,6 +60,13 @@ def load_model_and_data():
     
     model = joblib.load(MODEL_PATH)
     print(f"Loaded model from {MODEL_PATH}")
+    print(f"Model type: {type(model).__name__}")
+    
+    # If it's a VotingClassifier, extract the XGBoost model for DiCE
+    if hasattr(model, 'estimators_'):
+        print("Detected VotingClassifier - extracting XGBoost model for DiCE")
+        model = model.named_estimators_['xgb']
+        print(f"Using XGBoost model for DiCE counterfactuals")
     
     df = pd.read_csv(PREDICTIONS_PATH)
     print(f"Loaded predictions: {len(df):,} rows")
@@ -79,140 +86,118 @@ def get_model_features(df):
     
     return feature_cols
 
-def get_feature_ranges(df, feature_cols):
-    """Get min/max ranges for features from training data."""
-    print("\nComputing feature ranges...")
-    
-    ranges = {}
-    for feat in feature_cols:
-        if feat in df.columns:
-            ranges[feat] = [df[feat].min(), df[feat].max()]
-    
-    print("Feature ranges computed")
-    return ranges
 
-def setup_dice(model, df, feature_cols, feature_ranges):
-    """Set up DiCE explainer."""
-    print("\nSetting up DiCE explainer...")
-    
-    # Prepare data for DiCE (include target column)
-    X = df[feature_cols + ['is_malicious']].copy()
-    
-    # Create DiCE data object
-    d = dice_ml.Data(
-        dataframe=X,
-        continuous_features=feature_cols,
-        outcome_name='is_malicious'
-    )
-    
-    # Create DiCE model object
-    m = dice_ml.Model(model=model, backend="sklearn", model_type="classifier")
-    
-    # Create DiCE explainer
-    exp = dice_ml.Dice(d, m, method='genetic')
-    
-    print("DiCE explainer setup complete")
-    return exp, X
-
-def generate_counterfactual_for_row(exp, X, row_idx, original_row, feature_cols, feature_ranges, model):
-    """Generate counterfactual for a single row."""
+def generate_baseline_explanation(original_row, model, feature_cols):
+    """Generate explanation by comparing to baseline instead of using DiCE."""
     try:
-        # Get the instance (exclude target column for instance)
-        instance = X.iloc[[row_idx]][feature_cols].copy()
+        # Identify features with highest POSITIVE deviation from baseline (above baseline = risky)
+        deviations = []
         
-        # Generate counterfactuals
-        cf_exp = exp.generate_counterfactuals(
-            instance,
-            total_CFs=3,
-            desired_class="opposite",
-            features_to_vary=MUTABLE_FEATURES,
-            permitted_range=feature_ranges
-        )
+        for feat in MUTABLE_FEATURES:
+            if feat in original_row.index:
+                current_val = original_row[feat]
+                baseline_mean_col = f'{feat}_rolling_mean'
+                baseline_std_col = f'{feat}_rolling_std'
+                
+                if baseline_mean_col in original_row.index and baseline_std_col in original_row.index:
+                    baseline_mean = original_row[baseline_mean_col]
+                    baseline_std = original_row[baseline_std_col]
+                    
+                    # Only consider if current value is ABOVE baseline (risky behavior)
+                    if current_val > baseline_mean and baseline_std > 0:
+                        z_score = (current_val - baseline_mean) / baseline_std
+                        deviations.append((feat, current_val, baseline_mean, z_score))
         
-        # Extract counterfactuals
-        cfs = cf_exp.cf_examples_list[0].final_cfs_df
+        # Sort by z-score (highest deviation first)
+        deviations.sort(key=lambda x: x[3], reverse=True)
         
-        if cfs is None or len(cfs) == 0:
+        # Take top 2-3 most deviated features
+        top_deviations = deviations[:3]
+        
+        if len(top_deviations) == 0:
             return None, None
         
-        # Get the first counterfactual
-        cf = cfs.iloc[0]
-        
-        # Calculate new prediction using original model
+        # Try different combinations to find one that lowers risk
         original_pred = original_row['risk_score']
-        new_pred_proba = model.predict_proba(cf[feature_cols].values.reshape(1, -1))[0][1]
-        new_pred = (new_pred_proba * 100).round(1)
         
-        # Check if prediction actually flipped
-        prediction_flipped = (original_row['risk_band'] == 'High' and new_pred < 30)
+        # Try reducing just the top feature
+        for n_features in range(1, len(top_deviations) + 1):
+            test_deviations = top_deviations[:n_features]
+            cf_values = original_row.copy()
+            
+            for feat, current_val, baseline_mean, z_score in test_deviations:
+                if baseline_mean > 0:
+                    cf_values[feat] = baseline_mean
+            
+            # Calculate new prediction
+            new_pred_proba = model.predict_proba(cf_values[feature_cols].values.reshape(1, -1))[0][1]
+            new_pred = (new_pred_proba * 100).round(1)
+            
+            # If this lowers risk, use it
+            if new_pred < original_pred:
+                # Calculate proximity (normalized distance to baseline)
+                proximity = np.mean([d[3] for d in test_deviations])
+                sparsity = len(test_deviations)
+                
+                return cf_values, {
+                    'prediction_improved': True,
+                    'proximity': proximity,
+                    'sparsity': sparsity,
+                    'new_risk_score': new_pred,
+                    'top_deviations': test_deviations
+                }
         
-        # Calculate proximity (normalized distance)
-        original_values = instance.iloc[0][MUTABLE_FEATURES].values
-        cf_values = cf[MUTABLE_FEATURES].values
-        ranges_array = np.array([feature_ranges[f][1] - feature_ranges[f][0] for f in MUTABLE_FEATURES])
-        ranges_array[ranges_array == 0] = 1  # Avoid division by zero
-        proximity = np.mean(np.abs(original_values - cf_values) / ranges_array)
-        
-        # Calculate sparsity (number of features changed)
-        changes = np.abs(original_values - cf_values) > 1e-6
-        sparsity = np.sum(changes)
-        
-        return cf, {
-            'prediction_flipped': prediction_flipped,
-            'proximity': proximity,
-            'sparsity': sparsity,
-            'new_risk_score': new_pred
-        }
+        # If no combination works, return None
+        return None, None
         
     except Exception as e:
-        print(f"  Error generating CF for row {row_idx}: {str(e)}")
+        print(f"  Error generating baseline explanation: {str(e)}")
         return None, None
 
-def translate_counterfactual(original_row, cf, feature_cols, original_risk, new_risk):
-    """Translate counterfactual diff to plain English."""
+def translate_counterfactual(original_row, cf, feature_cols, original_risk, new_risk, top_deviations):
+    """Translate counterfactual diff to plain English with baseline context."""
     changes = []
     
-    for feat in MUTABLE_FEATURES:
-        if feat in original_row.index and feat in cf.index:
-            original_val = original_row[feat]
-            cf_val = cf[feat]
-            
-            # Check if significantly different
-            if abs(original_val - cf_val) > 1e-6:
+    for feat, current_val, baseline_mean, z_score in top_deviations:
+        if feat in original_row.index:
+            # Check if baseline is available and current is above baseline
+            if baseline_mean > 0 and current_val > baseline_mean:
                 if feat in ['off_hours_ratio', 'avg_attachment_size']:
-                    # Format as percentage or decimal
-                    changes.append(f"{feat} from {original_val:.2f} to {cf_val:.2f}")
+                    changes.append(f"{feat} from {current_val:.2f} to {baseline_mean:.2f} (peer baseline)")
                 else:
-                    # Format as integer
-                    changes.append(f"{feat} from {int(original_val)} to {int(cf_val)}")
+                    changes.append(f"{feat} from {int(current_val)} to {int(baseline_mean)} (peer baseline)")
     
     if len(changes) == 0:
         return None
     
     # Build explanation sentence
+    risk_change = new_risk - original_risk
+    
+    # Get role/department context
+    role = original_row.get('role', 'their role')
+    cohort = original_row.get('peer_cohort', role)
+    
     if len(changes) == 1:
-        explanation = f"Reducing {changes[0]} would lower this user's risk score from {original_risk:.1f} to {new_risk:.1f}."
+        explanation = f"To lower risk score from {original_risk:.1f} to {new_risk:.1f}, reduce {changes[0]} to align with {cohort} group's typical behavior."
     elif len(changes) == 2:
-        explanation = f"Reducing {changes[0]} and {changes[1]} would lower this user's risk score from {original_risk:.1f} to {new_risk:.1f}."
+        explanation = f"To lower risk score from {original_risk:.1f} to {new_risk:.1f}, reduce {changes[0]} and {changes[1]} to align with {cohort} group's typical behavior."
     else:
         changes_str = ", ".join(changes[:-1]) + ", and " + changes[-1]
-        explanation = f"Reducing {changes_str} would lower this user's risk score from {original_risk:.1f} to {new_risk:.1f}."
+        explanation = f"To lower risk score from {original_risk:.1f} to {new_risk:.1f}, reduce {changes_str} to align with {cohort} group's typical behavior."
     
     return explanation
 
 def generate_counterfactuals(model, df, feature_cols):
-    """Generate counterfactuals for high-risk rows."""
-    print("\nGenerating counterfactuals for High-risk rows...")
+    """Generate baseline-aware explanations for all High and Medium risk rows."""
+    print("\nGenerating baseline-aware explanations for High and Medium risk rows...")
     
-    # Get feature ranges
-    feature_ranges = get_feature_ranges(df, feature_cols)
+    # Get ALL High and Medium risk rows (not just malicious)
+    risk_rows = df[df['risk_band'].isin(['High', 'Medium'])]
+    print(f"Found {len(risk_rows)} High/Medium risk rows")
     
-    # Set up DiCE
-    exp, X = setup_dice(model, df, feature_cols, feature_ranges)
-    
-    # Get High-risk rows
-    high_risk_rows = df[df['risk_band'] == 'High'].head(20)
-    print(f"Processing {len(high_risk_rows)} High-risk rows (capped at 20)")
+    # Process all risk rows
+    all_risk_rows = risk_rows
+    print(f"Processing {len(all_risk_rows)} risk rows")
     
     # Initialize columns
     df['dice_explanation'] = None
@@ -223,16 +208,16 @@ def generate_counterfactuals(model, df, feature_cols):
     proximities = []
     sparsities = []
     
-    # Generate CFs for each row
-    for i, (idx, row) in enumerate(high_risk_rows.iterrows()):
-        print(f"  Processing row {i+1}/{len(high_risk_rows)} (user: {row['user']})")
+    # Generate explanations for each row
+    for i, (idx, row) in enumerate(all_risk_rows.iterrows()):
+        print(f"  Processing row {i+1}/{len(all_risk_rows)} (user: {row['user']}, risk: {row['risk_band']})")
         
-        # Find corresponding index in X
-        row_idx = df.index.get_loc(idx)
+        # Get the row from df to ensure we have all columns
+        original_row = df.loc[idx]
         
-        # Generate counterfactual
-        cf, metrics = generate_counterfactual_for_row(
-            exp, X, row_idx, row, feature_cols, feature_ranges, model
+        # Generate baseline explanation
+        cf, metrics = generate_baseline_explanation(
+            original_row, model, feature_cols
         )
         
         total_cfs += 1
@@ -240,7 +225,8 @@ def generate_counterfactuals(model, df, feature_cols):
         if cf is not None:
             # Translate to explanation
             explanation = translate_counterfactual(
-                row, cf, feature_cols, row['risk_score'], metrics['new_risk_score']
+                original_row, cf, feature_cols, original_row['risk_score'], 
+                metrics['new_risk_score'], metrics['top_deviations']
             )
             
             if explanation:
@@ -248,26 +234,23 @@ def generate_counterfactuals(model, df, feature_cols):
                 valid_cfs += 1
                 proximities.append(metrics['proximity'])
                 sparsities.append(metrics['sparsity'])
-                
-                if metrics['prediction_flipped']:
-                    valid_cfs += 1  # Count as valid if prediction flipped
         else:
-            print(f"  Failed to generate CF for row {i+1}")
+            print(f"  Failed to generate explanation for row {i+1}")
     
     # Print quality metrics
     print("\n" + "="*60)
-    print("COUNTERFACTUAL QUALITY METRICS")
+    print("EXPLANATION QUALITY METRICS")
     print("="*60)
     
     validity = (valid_cfs / total_cfs * 100) if total_cfs > 0 else 0
     avg_proximity = np.mean(proximities) if proximities else 0
     avg_sparsity = np.mean(sparsities) if sparsities else 0
     
-    print(f"\nTotal counterfactuals attempted: {total_cfs}")
-    print(f"Valid counterfactuals: {valid_cfs}")
-    print(f"Validity (% that flip prediction): {validity:.2f}%")
-    print(f"Average proximity (normalized distance): {avg_proximity:.4f}")
-    print(f"Average sparsity (features changed): {avg_sparsity:.2f}")
+    print(f"\nTotal explanations attempted: {total_cfs}")
+    print(f"Valid explanations: {valid_cfs}")
+    print(f"Validity (% successfully generated): {validity:.2f}%")
+    print(f"Average proximity (mean z-score deviation): {avg_proximity:.4f}")
+    print(f"Average sparsity (features analyzed): {avg_sparsity:.2f}")
     print("="*60)
     
     return df
@@ -293,6 +276,64 @@ def print_example_counterfactuals(df):
     
     print("="*60)
 
+def create_risk_classification_table(df):
+    """Create a risk classification table with employee IDs, weeks, and risk levels."""
+    print("\n" + "="*60)
+    print("CREATING RISK CLASSIFICATION TABLE")
+    print("="*60)
+    
+    # Create summary table - one row per user-week with risk classification
+    risk_table = df[['user', 'week', 'role', 'department', 'risk_score', 'risk_band', 'is_malicious', 'dice_explanation']].copy()
+    
+    # Ensure week is datetime for proper formatting
+    risk_table['week'] = pd.to_datetime(risk_table['week'])
+    
+    # Sort by risk score descending (highest risk first)
+    risk_table = risk_table.sort_values('risk_score', ascending=False)
+    
+    # Count by risk band
+    high_risk = risk_table[risk_table['risk_band'] == 'High']
+    medium_risk = risk_table[risk_table['risk_band'] == 'Medium']
+    low_risk = risk_table[risk_table['risk_band'] == 'Low']
+    
+    print(f"\nRisk Classification Summary:")
+    print(f"  High Risk: {len(high_risk)} user-weeks")
+    print(f"  Medium Risk: {len(medium_risk)} user-weeks")
+    print(f"  Low Risk: {len(low_risk)} user-weeks")
+    
+    # Check for false positives (High/Medium risk but not malicious)
+    false_positives_high = high_risk[high_risk['is_malicious'] == 0]
+    false_positives_medium = medium_risk[medium_risk['is_malicious'] == 0]
+    
+    print(f"\nFalse Positive Analysis:")
+    print(f"  High Risk False Positives: {len(false_positives_high)} (non-malicious flagged as High)")
+    print(f"  Medium Risk False Positives: {len(false_positives_medium)} (non-malicious flagged as Medium)")
+    
+    # Check for malicious users not flagged
+    malicious_not_flagged = df[(df['is_malicious'] == 1) & (df['risk_band'] == 'Low')]
+    print(f"  Malicious users not flagged (Low risk): {len(malicious_not_flagged)}")
+    
+    # Save the risk classification table
+    output_file = OUTPUT_PATH / "risk_classification_table.csv"
+    risk_table.to_csv(output_file, index=False)
+    print(f"\nSaved risk classification table: {output_file}")
+    
+    # Create a focused summary for High and Medium risk only
+    high_med_summary = risk_table[risk_table['risk_band'].isin(['High', 'Medium'])].copy()
+    summary_file = OUTPUT_PATH / "high_medium_risk_summary.csv"
+    high_med_summary.to_csv(summary_file, index=False)
+    print(f"Saved High/Medium risk summary: {summary_file}")
+    
+    # Print sample of high risk employees
+    print(f"\n" + "="*60)
+    print("HIGH RISK EMPLOYEES (Top 10)")
+    print("="*60)
+    print(high_risk[['user', 'week', 'role', 'risk_score', 'is_malicious', 'dice_explanation']].head(10).to_string(index=False))
+    
+    print("="*60)
+    
+    return risk_table
+
 def main():
     """Main execution function."""
     print("="*60)
@@ -310,6 +351,9 @@ def main():
     
     # Print examples
     print_example_counterfactuals(df)
+    
+    # Create risk classification table
+    risk_table = create_risk_classification_table(df)
     
     # Save final predictions
     output_file = OUTPUT_PATH / "final_predictions.csv"

@@ -15,7 +15,7 @@ RAW_FEATURES = [
 @st.cache_data
 def load_dashboard_data():
     """Load dashboard development data with risk scores and explanations."""
-    file_path = 'data/cleaned/final_predictions.csv'
+    file_path = '../data/cleaned/dashboard_dev_data.csv'
     df = pd.read_csv(file_path, low_memory=False)
     df['week'] = pd.to_datetime(df['week'])
     return df
@@ -241,10 +241,10 @@ if view_mode == "Individual Analysis":
     
     # Alert Panel
     st.markdown("### Risk Assessment")
-    
-    if risk_score > 70:
+
+    if risk_score > 20:
         st.error(f"FLAGGED - High Risk Score: {risk_score:.1f}")
-    elif risk_score > 30:
+    elif risk_score > 5:
         st.warning(f"Medium Risk Score: {risk_score:.1f}")
     else:
         st.success(f"Low Risk Score: {risk_score:.1f}")
@@ -261,7 +261,7 @@ if view_mode == "Individual Analysis":
             value = risk_score,
             domain = {'x': [0, 1], 'y': [0, 1]},
             title = {'text': "Risk Score", 'font': {'size': 18, 'color': '#E4E9F2'}},
-            delta = {'reference': 50},
+            delta = {'reference': 20},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#6B7A94"},
                 'bar': {'color': "#E4E9F2", 'thickness': 0.3},
@@ -269,14 +269,14 @@ if view_mode == "Individual Analysis":
                 'borderwidth': 1,
                 'bordercolor': "#6B7A94",
                 'steps': [
-                    {'range': [0, 30], 'color': 'rgba(74, 222, 128, 0.3)'},
-                    {'range': [30, 70], 'color': 'rgba(251, 191, 36, 0.3)'},
-                    {'range': [70, 100], 'color': 'rgba(248, 113, 113, 0.3)'}
+                    {'range': [0, 5], 'color': 'rgba(74, 222, 128, 0.3)'},
+                    {'range': [5, 20], 'color': 'rgba(251, 191, 36, 0.3)'},
+                    {'range': [20, 100], 'color': 'rgba(248, 113, 113, 0.3)'}
                 ],
                 'threshold': {
                     'line': {'color': "#F87171", 'width': 2},
                     'thickness': 0.75,
-                    'value': 70
+                    'value': 20
                 }
             }
         ))
@@ -370,7 +370,7 @@ if view_mode == "Individual Analysis":
     st.markdown("")
     
     # SHAP Explanation Panel - Only show for Medium/High risk
-    if risk_score > 30:
+    if risk_score > 5:
         st.markdown("### Why is this risk score high?")
         if pd.notna(selected_row['shap_top_features']):
             try:
@@ -458,7 +458,7 @@ if view_mode == "Individual Analysis":
     st.markdown("")
     
     # DiCE Explanation Panel - Only show for Medium/High risk
-    if risk_score > 30:
+    if risk_score > 5:
         st.markdown("### What would lower the risk?")
         if pd.notna(selected_row['dice_explanation']):
             st.info(selected_row['dice_explanation'])
@@ -505,9 +505,14 @@ elif view_mode == "Live Risk Simulator":
     try:
         import joblib
         import shap
-        import dice_ml
         
-        model = joblib.load('models/xgb_risk_model.pkl')
+        model = joblib.load('../models/xgb_risk_model.pkl')
+        
+        # If it's a VotingClassifier, extract the XGBoost model for SHAP/DiCE
+        if hasattr(model, 'estimators_'):
+            model_xgb = model.named_estimators_['xgb']
+        else:
+            model_xgb = model
         
         # Get feature ranges from data
         feature_ranges = {}
@@ -583,7 +588,7 @@ elif view_mode == "Live Risk Simulator":
                 baseline_week = cohort_data['week'].iloc[mid_idx]
                 baseline = cohort_data[cohort_data['week'] == baseline_week].iloc[0]
                 
-                # Compute z-scores
+                # Compute z-scores for all features
                 z_scores = {}
                 for feat in RAW_FEATURES:
                     if feat in input_values and f'{feat}_rolling_mean' in baseline.index and f'{feat}_rolling_std' in baseline.index:
@@ -595,6 +600,9 @@ elif view_mode == "Live Risk Simulator":
                             z_scores[f'{feat}_z_score'] = max(-5, min(5, z_score))
                         else:
                             z_scores[f'{feat}_z_score'] = 0.0
+                    else:
+                        # If baseline not available, set z-score to 0
+                        z_scores[f'{feat}_z_score'] = 0.0
                 
                 # Compute peer deviation score
                 peer_deviation_score = np.mean([abs(v) for v in z_scores.values()])
@@ -607,20 +615,28 @@ elif view_mode == "Live Risk Simulator":
                 feature_vector['peer_deviation_score'] = peer_deviation_score
                 
                 # Get model's expected feature order
-                model_features = model.get_booster().feature_names
+                model_features = model_xgb.feature_names_in_
+                
+                # Reconstruct feature_vector in exact model order
+                ordered_vector = {}
+                for feat in model_features:
+                    if feat in feature_vector:
+                        ordered_vector[feat] = feature_vector[feat]
+                    else:
+                        ordered_vector[feat] = 0  # Default to 0 if missing
                 
                 # Create input in correct order
-                input_row = pd.DataFrame([feature_vector])[model_features]
+                input_row = pd.DataFrame([ordered_vector])[model_features]
                 
-                # Get prediction
+                # Get prediction using the ensemble model (which has predict_proba)
                 risk_proba_raw = model.predict_proba(input_row)[0][1]
                 risk_proba = risk_proba_raw
                 risk_score = risk_proba * 100
                 
-                # Determine risk band
-                if risk_score > 70:
+                # Determine risk band (matching new model thresholds)
+                if risk_score > 20:
                     risk_band = 'High'
-                elif risk_score > 30:
+                elif risk_score > 5:
                     risk_band = 'Medium'
                 else:
                     risk_band = 'Low'
@@ -629,9 +645,9 @@ elif view_mode == "Live Risk Simulator":
                 st.markdown("### Risk Assessment Results")
                 
                 # Alert panel
-                if risk_score > 70:
+                if risk_score > 5:
                     st.error(f"FLAGGED - High Risk Score: {risk_score:.1f}")
-                elif risk_score > 30:
+                elif risk_score > 2:
                     st.warning(f"Medium Risk Score: {risk_score:.1f}")
                 else:
                     st.success(f"Low Risk Score: {risk_score:.1f}")
@@ -646,7 +662,7 @@ elif view_mode == "Live Risk Simulator":
                         value = risk_score,
                         domain = {'x': [0, 1], 'y': [0, 1]},
                         title = {'text': "Risk Score", 'font': {'size': 18, 'color': '#E4E9F2'}},
-                        delta = {'reference': 50},
+                        delta = {'reference': 20},
                         gauge = {
                             'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#6B7A94"},
                             'bar': {'color': "#E4E9F2", 'thickness': 0.3},
@@ -654,14 +670,14 @@ elif view_mode == "Live Risk Simulator":
                             'borderwidth': 1,
                             'bordercolor': "#6B7A94",
                             'steps': [
-                                {'range': [0, 30], 'color': 'rgba(74, 222, 128, 0.3)'},
-                                {'range': [30, 70], 'color': 'rgba(251, 191, 36, 0.3)'},
-                                {'range': [70, 100], 'color': 'rgba(248, 113, 113, 0.3)'}
+                                {'range': [0, 5], 'color': 'rgba(74, 222, 128, 0.3)'},
+                                {'range': [5, 20], 'color': 'rgba(251, 191, 36, 0.3)'},
+                                {'range': [20, 100], 'color': 'rgba(248, 113, 113, 0.3)'}
                             ],
                             'threshold': {
                                 'line': {'color': "#F87171", 'width': 2},
                                 'thickness': 0.75,
-                                'value': 70
+                                'value': 20
                             }
                         }
                     ))
@@ -692,7 +708,7 @@ elif view_mode == "Live Risk Simulator":
                 else:
                     st.subheader("Feature importance for this prediction")
                 try:
-                    explainer = shap.TreeExplainer(model)
+                    explainer = shap.TreeExplainer(model_xgb)
                     shap_values = explainer.shap_values(input_row)
                     
                     # Get top features
@@ -715,67 +731,33 @@ elif view_mode == "Live Risk Simulator":
                 except Exception as e:
                     st.error(f"Error generating SHAP explanation: {str(e)}")
                 
-                # DiCE counterfactual button
+                # Baseline-based explanation
                 st.markdown("---")
-                st.markdown("### DiCE Counterfactual")
-                if st.button("Generate Counterfactual", key="generate_cf"):
-                    with st.spinner("Generating counterfactual..."):
-                        try:
-                            # Prepare DiCE data - use a sample of the training data
-                            dice_sample = df[model_features + ['is_malicious']].sample(min(1000, len(df)), random_state=42)
-                            
-                            d = dice_ml.Data(
-                                dataframe=dice_sample,
-                                continuous_features=model_features,
-                                outcome_name='is_malicious'
-                            )
-                            m = dice_ml.Model(model=model, backend="sklearn", model_type="classifier")
-                            exp = dice_ml.Dice(d, m, method='genetic')
-                            
-                            # Generate counterfactual
-                            cf_exp = exp.generate_counterfactuals(
-                                input_row,
-                                total_CFs=1,
-                                desired_class="opposite",
-                                features_to_vary=['off_hours_ratio', 'usb_events', 'file_access_count', 'copy_to_removable_count', 'email_attachment_count', 'avg_attachment_size', 'http_upload_count', 'http_download_count'],
-                                permitted_range={feat: [feature_ranges[feat]['min'], feature_ranges[feat]['max']] for feat in RAW_FEATURES if feat in feature_ranges},
-                                verbose=False
-                            )
-                            
-                            cfs = cf_exp.cf_examples_list[0].final_cfs_df
-                            if cfs is not None and len(cfs) > 0:
-                                cf = cfs.iloc[0]
-                                new_risk_proba = model.predict_proba(cf[model_features].values.reshape(1, -1))[0][1]
-                                new_risk_score = new_risk_proba * 100
-                                
-                                # Generate explanation
-                                changes = []
-                                for feat in ['off_hours_ratio', 'usb_events', 'file_access_count', 'copy_to_removable_count', 'email_attachment_count', 'avg_attachment_size', 'http_upload_count', 'http_download_count']:
-                                    if feat in input_values and feat in cf.index:
-                                        original_val = input_values[feat]
-                                        cf_val = cf[feat]
-                                        if abs(original_val - cf_val) > 1e-6:
-                                            if 'ratio' in feat or 'avg' in feat:
-                                                changes.append(f"{feat} from {original_val:.2f} to {cf_val:.2f}")
-                                            else:
-                                                changes.append(f"{feat} from {int(original_val)} to {int(cf_val)}")
-                                
-                                if changes:
-                                    if len(changes) == 1:
-                                        explanation = f"Reducing {changes[0]} would lower this user's risk score from {risk_score:.1f} to {new_risk_score:.1f}."
-                                    elif len(changes) == 2:
-                                        explanation = f"Reducing {changes[0]} and {changes[1]} would lower this user's risk score from {risk_score:.1f} to {new_risk_score:.1f}."
-                                    else:
-                                        changes_str = ", ".join(changes[:-1]) + ", and " + changes[-1]
-                                        explanation = f"Reducing {changes_str} would lower this user's risk score from {risk_score:.1f} to {new_risk_score:.1f}."
-                                    st.info(explanation)
-                                else:
-                                    st.info("No significant changes needed to lower risk")
+                st.markdown("### How to Lower Risk")
+                
+                # Identify features above baseline
+                changes = []
+                for feat in ['off_hours_ratio', 'usb_events', 'file_access_count', 'email_attachment_count', 'http_upload_count', 'http_download_count']:
+                    if feat in input_values and f'{feat}_rolling_mean' in baseline.index:
+                        current_val = input_values[feat]
+                        baseline_val = baseline[f'{feat}_rolling_mean']
+                        if current_val > baseline_val * 1.5:  # Only if significantly above baseline
+                            if 'ratio' in feat or 'avg' in feat:
+                                changes.append(f"{feat} from {current_val:.2f} to {baseline_val:.2f} (peer baseline)")
                             else:
-                                st.info("Could not generate counterfactual - try different input values")
-                        except Exception as e:
-                            st.error(f"Error generating counterfactual: {str(e)}")
-                            st.info("DiCE counterfactual generation can be slow or fail for certain input patterns. Try adjusting the input values.")
+                                changes.append(f"{feat} from {int(current_val)} to {int(baseline_val)} (peer baseline)")
+                
+                if changes:
+                    if len(changes) == 1:
+                        explanation = f"To lower risk, reduce {changes[0]} to align with {selected_cohort} group's typical behavior."
+                    elif len(changes) == 2:
+                        explanation = f"To lower risk, reduce {changes[0]} and {changes[1]} to align with {selected_cohort} group's typical behavior."
+                    else:
+                        changes_str = ", ".join(changes[:-1]) + ", and " + changes[-1]
+                        explanation = f"To lower risk, reduce {changes_str} to align with {selected_cohort} group's typical behavior."
+                    st.info(explanation)
+                else:
+                    st.info("All values are within normal range for this role.")
     
     except Exception as e:
         st.error(f"Error loading model or data: {str(e)}")
@@ -787,7 +769,7 @@ elif view_mode == "Summary & Evaluation":
     
     # Load real evaluation results
     try:
-        results_df = pd.read_csv('outputs/results_summary.csv')
+        results_df = pd.read_csv('../outputs/results_summary.csv')
         
         # Get full model metrics
         full_model = results_df[results_df['Model'] == 'Full Peer-Cohort Model'].iloc[0]
@@ -795,15 +777,13 @@ elif view_mode == "Summary & Evaluation":
         
         # Real metrics
         st.markdown("### Model Performance Metrics")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric("Precision", f"{full_model['Precision']:.4f}")
         with col2:
-            st.metric("Recall", f"{full_model['Recall']:.4f}")
-        with col3:
             st.metric("F1 Score", f"{full_model['F1-Score']:.4f}")
-        with col4:
+        with col3:
             st.metric("FPR", f"{full_model['False Positive Rate']:.4f}")
         
         st.markdown("---")
@@ -830,7 +810,7 @@ elif view_mode == "Summary & Evaluation":
         st.markdown("---")
         st.subheader("Detailed Results Comparison")
         st.dataframe(
-            results_df[['Model', 'Precision', 'Recall', 'F1-Score', 'False Positive Rate', 'ROC-AUC', 'PR-AUC']],
+            results_df[['Model', 'Precision', 'F1-Score', 'False Positive Rate', 'ROC-AUC', 'PR-AUC']],
             width='stretch',
             hide_index=True
         )

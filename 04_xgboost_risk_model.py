@@ -127,26 +127,32 @@ def train_xgboost_model(train_df, feature_cols):
     y_train = train_df['is_malicious']
     
     # Compute scale_pos_weight for class imbalance
-    # ratio = negative_samples / positive_samples
+    # Use very low weight to avoid over-conservative predictions
     neg_samples = (y_train == 0).sum()
     pos_samples = (y_train == 1).sum()
-    scale_pos_weight = neg_samples / pos_samples
+    # Use minimal weight to let model learn natural patterns
+    scale_pos_weight = 2.0  # Very low weight
     
-    print(f"Class imbalance ratio: {scale_pos_weight:.2f}:1")
+    print(f"Class imbalance ratio: {neg_samples/pos_samples:.2f}:1")
+    print(f"Using fixed scale_pos_weight: {scale_pos_weight}:1")
     print(f"Negative samples: {neg_samples:,}")
     print(f"Positive samples: {pos_samples:,}")
     
-    # Train XGBoost model
+    # Train XGBoost model with balanced parameters
     model = xgb.XGBClassifier(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        n_estimators=500,  # More trees for better learning
+        max_depth=10,  # Deeper trees to capture complex patterns
+        learning_rate=0.03,  # Lower learning rate for better convergence
+        subsample=0.9,
+        colsample_bytree=0.9,
         scale_pos_weight=scale_pos_weight,
         random_state=42,
         n_jobs=-1,
-        eval_metric='logloss'
+        eval_metric='logloss',
+        min_child_weight=1,  # Allow smaller leaves
+        gamma=0,  # No gamma penalty
+        reg_alpha=0,  # No L1 regularization
+        reg_lambda=0.5  # Minimal L2 regularization
     )
     
     model.fit(X_train, y_train)
@@ -166,7 +172,8 @@ def evaluate_model(model, test_df, feature_cols):
     
     # Get predictions
     y_pred_proba = model.predict_proba(X_test)[:, 1]
-    y_pred = (y_pred_proba >= 0.5).astype(int)
+    # Use lower threshold (0.15 = 15% risk score) to match High risk band
+    y_pred = (y_pred_proba >= 0.15).astype(int)
     
     # Calculate metrics
     precision = precision_score(y_test, y_pred)
@@ -327,10 +334,11 @@ def add_risk_scores(test_df, y_pred_proba):
     # Risk score: probability * 100, rounded
     test_df['risk_score'] = (y_pred_proba * 100).round(1)
     
-    # Risk band
+    # Risk band - Use lower thresholds to catch more malicious cases
+    # 0-5: Low, 5-15: Medium, 15-100: High
     test_df['risk_band'] = pd.cut(
         test_df['risk_score'],
-        bins=[0, 30, 70, 100],
+        bins=[0, 5, 15, 100],
         labels=['Low', 'Medium', 'High'],
         include_lowest=True
     )

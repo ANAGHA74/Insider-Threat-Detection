@@ -116,7 +116,8 @@ def evaluate_full_model(df, feature_cols):
     
     # Use risk_score as prediction probability
     y_pred_proba = df['risk_score'] / 100
-    y_pred = (y_pred_proba >= 0.5).astype(int)
+    # Use threshold of 0.20 (20% risk score) to match High Risk band (consistent with ensemble model training)
+    y_pred = (y_pred_proba >= 0.20).astype(int)
     
     # Calculate metrics
     precision = precision_score(y_test, y_pred, zero_division=0)
@@ -331,6 +332,7 @@ def write_evaluation_report(baseline_metrics, full_metrics, ablation_metrics):
         f.write("="*80 + "\n\n")
         f.write(f"{'Metric':<20} {'Static Baseline':<20} {'Ablation (No Peer)':<20} {'Full Peer-Cohort':<20}\n")
         f.write("-" * 80 + "\n")
+        f.write("Note: Full Peer-Cohort Model uses threshold of 0.20 (20% risk score) to match High Risk band\n\n")
         
         metrics_to_compare = [
             ('Precision', 'precision'),
@@ -356,13 +358,20 @@ def write_evaluation_report(baseline_metrics, full_metrics, ablation_metrics):
         f.write(f"• PR-AUC Improvement: {(full_metrics['pr_auc'] - baseline_metrics['pr_auc']) / baseline_metrics['pr_auc'] * 100:.2f}%\n")
         f.write(f"• Peer Feature Contribution (ROC-AUC): {(full_metrics['roc_auc'] - ablation_metrics['roc_auc']) / ablation_metrics['roc_auc'] * 100:.2f}%\n\n")
         
-        f.write("3. DICE COUNTERFACTUAL QUALITY\n")
+        f.write("3. RISK BAND THRESHOLDS\n")
+        f.write("="*80 + "\n\n")
+        f.write("Low Risk: 0-5 (0-5% risk score)\n")
+        f.write("Medium Risk: 5-20 (5-20% risk score)\n")
+        f.write("High Risk: 20-100 (20-100% risk score)\n")
+        f.write("Classification threshold: 0.20 (20% risk score) for malicious detection\n\n")
+        
+        f.write("4. DICE COUNTERFACTUAL QUALITY\n")
         f.write("="*80 + "\n\n")
         f.write("Validity (% that flip prediction): 195.00%\n")
         f.write("Average proximity (normalized distance): 0.0494\n")
         f.write("Average sparsity (features changed): 4.35\n\n")
         
-        f.write("4. CONCLUSION\n")
+        f.write("5. CONCLUSION\n")
         f.write("="*80 + "\n\n")
         f.write("The peer-cohort baselining approach successfully achieves both objectives:\n")
         f.write("1. Personalized risk scoring with significantly reduced false positives\n")
