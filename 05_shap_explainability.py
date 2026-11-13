@@ -14,8 +14,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Configuration
-MODEL_PATH = Path("models/xgb_risk_model.pkl")
-PREDICTIONS_PATH = Path("data/cleaned/test_predictions.csv")
+MODEL_PATH = Path("models/catboost_ensemble_model.pkl")
+PREDICTIONS_PATH = Path("data/cleaned/final_predictions.csv")
 OUTPUT_PATH = Path("data/cleaned")
 PLOTS_PATH = Path("outputs")
 
@@ -39,20 +39,20 @@ EXCLUDE_COLS = [
 def load_model_and_data():
     """Load trained model and test predictions."""
     print("Loading model and predictions...")
-    
+
     model = joblib.load(MODEL_PATH)
     print(f"Loaded model from {MODEL_PATH}")
     print(f"Model type: {type(model).__name__}")
-    
-    # If it's a VotingClassifier, extract the XGBoost model for SHAP
+
+    # If it's a VotingClassifier, extract the CatBoost model for SHAP
     if hasattr(model, 'estimators_'):
-        print("Detected VotingClassifier - extracting XGBoost model for SHAP")
-        model = model.named_estimators_['xgb']
-        print(f"Using XGBoost model for SHAP explanations")
-    
+        print("Detected VotingClassifier - extracting CatBoost model for SHAP")
+        model = model.named_estimators_['cat']
+        print(f"Using CatBoost model for SHAP explanations")
+
     df = pd.read_csv(PREDICTIONS_PATH)
     print(f"Loaded predictions: {len(df):,} rows")
-    
+
     return model, df
 
 def get_model_features(df):

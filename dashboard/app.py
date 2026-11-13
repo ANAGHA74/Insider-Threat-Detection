@@ -508,9 +508,9 @@ elif view_mode == "Live Risk Simulator":
         
         model = joblib.load('../models/xgb_risk_model.pkl')
         
-        # If it's a VotingClassifier, extract the XGBoost model for SHAP/DiCE
+        # If it's a VotingClassifier, extract the CatBoost model for SHAP/DiCE
         if hasattr(model, 'estimators_'):
-            model_xgb = model.named_estimators_['xgb']
+            model_xgb = model.named_estimators_['cat']
         else:
             model_xgb = model
         
@@ -615,7 +615,14 @@ elif view_mode == "Live Risk Simulator":
                 feature_vector['peer_deviation_score'] = peer_deviation_score
                 
                 # Get model's expected feature order
-                model_features = model_xgb.feature_names_in_
+                # CatBoost uses feature_names_, scikit-learn uses feature_names_in_
+                if hasattr(model_xgb, 'feature_names_in_'):
+                    model_features = model_xgb.feature_names_in_
+                elif hasattr(model_xgb, 'feature_names_'):
+                    model_features = model_xgb.feature_names_
+                else:
+                    # Fallback: use all numeric features from data
+                    model_features = [col for col in df.columns if col not in ['user', 'week', 'role', 'department', 'peer_cohort', 'business_unit', 'has_sufficient_baseline', 'is_malicious', 'risk_score', 'risk_band', 'predicted_malicious', 'shap_top_features', 'dice_explanation']]
                 
                 # Reconstruct feature_vector in exact model order
                 ordered_vector = {}
@@ -643,11 +650,11 @@ elif view_mode == "Live Risk Simulator":
                 
                 # Display results
                 st.markdown("### Risk Assessment Results")
-                
-                # Alert panel
-                if risk_score > 5:
+
+                # Alert panel (correct thresholds: High >20, Medium >5)
+                if risk_score > 20:
                     st.error(f"FLAGGED - High Risk Score: {risk_score:.1f}")
-                elif risk_score > 2:
+                elif risk_score > 5:
                     st.warning(f"Medium Risk Score: {risk_score:.1f}")
                 else:
                     st.success(f"Low Risk Score: {risk_score:.1f}")
@@ -703,7 +710,7 @@ elif view_mode == "Live Risk Simulator":
                 
                 # SHAP explanation
                 st.markdown("### SHAP Explanation")
-                if risk_score > 30:
+                if risk_score > 20:
                     st.subheader("Why is this risk score elevated?")
                 else:
                     st.subheader("Feature importance for this prediction")
@@ -761,7 +768,7 @@ elif view_mode == "Live Risk Simulator":
     
     except Exception as e:
         st.error(f"Error loading model or data: {str(e)}")
-        st.info("Please ensure models/xgb_risk_model.pkl exists and data is available.")
+        st.info("Please ensure models/catboost_ensemble_model.pkl exists and data is available.")
 
 
 elif view_mode == "Summary & Evaluation":

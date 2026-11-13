@@ -107,6 +107,14 @@ This will:
 - Update `outputs/evaluation_report.txt`
 - Generate comparison charts (confusion matrices, FPR comparison)
 
+**Current Actual Metrics (after running evaluation):**
+- Precision: 0.6667 (66.67%)
+- Recall: 0.3636 (36.36%)
+- F1-Score: 0.4706 (47.06%)
+- False Positive Rate: 0.0006 (0.06%)
+- ROC-AUC: 0.9234
+- PR-AUC: 0.3897
+
 ### Step 2: Update Dashboard Data (Optional)
 ```bash
 cd "F:\major project"

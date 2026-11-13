@@ -275,30 +275,35 @@ def print_dice_quality_metrics(df):
     print("\n" + "="*60)
     print("DICE COUNTERFACTUAL QUALITY METRICS")
     print("="*60)
-    
+
+    # Check if dice_explanation column exists
+    if 'dice_explanation' not in df.columns:
+        print("No counterfactual explanations available (run 06_dice_counterfactuals.py first)")
+        return
+
     # Get rows with counterfactuals
     cf_rows = df[df['dice_explanation'].notna()]
-    
+
     if len(cf_rows) == 0:
         print("No counterfactual explanations available")
         return
-    
+
     print(f"\nTotal counterfactuals generated: {len(cf_rows)}")
-    
+
     # Calculate quality metrics (recomputed from script output)
     # Validity: % that flip prediction
     # Proximity: mean normalized distance
     # Sparsity: mean features changed
-    
+
     # From the script output:
     validity = 195.0  # % (multiple CFs per row)
     proximity = 0.0494
     sparsity = 4.35
-    
+
     print(f"Validity (% that flip prediction): {validity:.2f}%")
     print(f"Average proximity (normalized distance): {proximity:.4f}")
     print(f"Average sparsity (features changed): {sparsity:.2f}")
-    
+
     print("="*60)
 
 def save_results_to_csv(baseline_metrics, full_metrics, ablation_metrics):
